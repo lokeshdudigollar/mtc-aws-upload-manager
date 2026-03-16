@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+
+build/
+lambda.zip
+layer.zip
+
+.env
+
+.vscode/
+.idea/
+
+localstack-data/
+
+node_modules/
+
+*.log
