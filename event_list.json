@@ -1,0 +1,6 @@
+{
+  "queryStringParameters": {
+    "userId": "user005",
+    "limit": "10"
+  }
+}
