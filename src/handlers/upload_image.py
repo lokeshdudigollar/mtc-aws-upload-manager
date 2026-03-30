@@ -3,6 +3,7 @@ import json
 
 from src.utils.image_service_factory import get_image_service
 import src.utils.constants as constants
+from src.utils.validators import validate_upload
 
 def handler(event, context):
     """
@@ -16,8 +17,6 @@ def handler(event, context):
         is_base64 = event.get('isBase64Encoded', False)
         body = event.get('body', '')
 
-        if not body:
-            raise ValueError(constants.ERR_MISSING_BODY)
         
         if is_base64:
             file_bytes = base64.b64decode(body)
@@ -32,17 +31,8 @@ def handler(event, context):
         tags = headers.get("tags", [])
         file_name = headers.get("filename")
         content_type = headers.get("content-type")
-
-        if not user_id:
-            raise ValueError(constants.ERR_MISSING_USER_ID)
-        
-
-        if content_type not in constants.ALLOWED_CONTENT_TYPES:
-            raise ValueError(constants.ERR_UNSUPPORTED_FILE)
-
-        
-        if len(file_bytes) > constants.MAX_IMAGE_SIZE_BYTES:
-            raise ValueError(constants.ERR_FILE_TOO_LARGE)
+        # Validate the upload request
+        validate_upload(body, user_id, content_type, file_bytes)
         
         # if tags arrive as a string, split it into a list:
         if isinstance(tags, str):

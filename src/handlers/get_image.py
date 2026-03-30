@@ -2,6 +2,7 @@ import json
 
 from src.utils.image_service_factory import get_image_service
 import src.utils.constants as constants
+from src.utils.validators import validate_image_request
 
 """
 Example request: GET /images/user123/01HV9YJ6ZK9W4H7X2A
@@ -30,12 +31,15 @@ def handler(event, context):
         user_id = path_params.get("userId")
         image_id = path_params.get("imageId")
 
-        # Validate path parameters
-        if not user_id or not image_id:
+        try:
+            # Validate path parameters
+            validate_image_request(user_id, image_id)
+        except ValueError as ve:
             return {
                 "statusCode": constants.HTTP_BAD_REQUEST,
-                "body": json.dumps({"error": constants.ERR_MISSING_USER_IMAGE_ID})
+                "body": json.dumps({"error": str(ve)})
             }
+        
         # Fetch image metadata and presigned URL
         res = image_service.get_image(
             user_id= user_id,

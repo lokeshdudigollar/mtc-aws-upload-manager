@@ -2,10 +2,15 @@ import datetime
 import hashlib
 import ulid
 
-from src.utils.pagination import encode_token
+from src.utils.helpers import encode_token
 from botocore.exceptions import ClientError
 from src.models.image_model import Image
 import src.utils.constants as constants
+from src.utils.helpers import (
+    generate_image_id, get_current_timestamp, 
+    generate_idempotency_key, encode_token
+)
+from src.utils.validators import validate_upload, validate_user_id
 
 class ImageService:
     """
@@ -30,17 +35,14 @@ class ImageService:
         Returns:
             dict: The image ID and final status.
         """
-        if not user_id:
-            raise ValueError(constants.ERR_MISSING_USER_ID)
-        if not file_bytes:
-            raise ValueError(constants.ERR_MISSING_IMAGE_FILE)
+        validate_user_id(user_id)
+        validate_upload(file_bytes, user_id, content_type, file_bytes)
 
         # Generate ULID for high-performance sorting/uniqueness
-        image_id = str(ulid.new())
-        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        image_id = generate_image_id()
+        created_at = get_current_timestamp()
         # Generate idempotency key to prevent duplicate processing of the same file
-        raw = file_bytes + user_id.encode() # prevents two users uploading the same image from colliding.
-        idempotency_key = hashlib.sha256(raw).hexdigest()
+        idempotency_key = generate_idempotency_key(file_bytes, user_id)
         # Check if an upload with the same idempotency key is already in progress or completed
         existing = self.db.get_by_idempotency_key(idempotency_key)
         if existing and existing.get("status") == constants.STATUS_READY:

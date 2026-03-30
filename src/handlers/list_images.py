@@ -1,8 +1,10 @@
 import json
 
 from src.utils.image_service_factory import get_image_service
-from src.utils.pagination import decode_token
+from src.utils.helpers import decode_token
 import src.utils.constants as constants
+from src.utils.validators import validate_user_id, validate_pagination_limit
+from src.utils.helpers import decode_token
 
 """
 Example request: GET /images?userId=user123&limit=10&lastKey=XYZ
@@ -44,19 +46,9 @@ def handler(event, context):
         limit = query_params.get("limit", 20)
         #last_key = query_params.get("lastKey")
         
-        if not userId:
-            return {
-                "statusCode": constants.HTTP_BAD_REQUEST,
-                "body": json.dumps({"error": constants.ERR_MISSING_USER_ID})
-            }
-        # try converting limit to int
-        try:
-            limit = int(limit)
-        except ValueError:
-            return {
-                "statusCode": constants.HTTP_BAD_REQUEST,
-                "body": json.dumps({"error": constants.ERR_INVALID_LIMIT})
-            }
+        # Validate inputs
+        validate_user_id(userId)
+        limit = validate_pagination_limit(limit)
         res = image_service.list_images(
             user_id= userId,
             limit= limit,
@@ -67,7 +59,13 @@ def handler(event, context):
             "statusCode": constants.HTTP_OK,
             "body": json.dumps(res, default=str) # 'default=str' handles datetime objects
         }
-
+    
+    except ValueError as ve:
+        return {
+            "statusCode": constants.HTTP_BAD_REQUEST,
+            "body": json.dumps({"error": str(ve)})
+        }
+    
     except Exception as e:
         return {
             "statusCode": constants.HTTP_INTERNAL_ERROR,
