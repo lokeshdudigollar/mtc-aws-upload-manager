@@ -1,125 +1,162 @@
-### Image Service API
+# Image Service Manager
 
----
+This project implements a scalable, serverless image management service using:
 
-A serverless image management API built using AWS Lambda, API Gateway, DynamoDB, and S3.
-The service supports uploading images, listing images, retrieving images via presigned URLs, and deleting images.
+- AWS Lambda (compute)
+- API Gateway (HTTP interface)
+- DynamoDB (metadata store)
+- S3 (object storage)
 
-The project runs locally using LocalStack, allowing AWS services to be simulated without deploying to AWS.
+The system supports:
+```
+* Image upload
+* Image listing (paginated)
+* Secure image retrieval via presigned URLs
+* Image deletion (idempotent)
+```
 
-## Architecture Overview
+The project is fully runnable locally using LocalStack.
 
-┌─────────────┐
-│ Client │
-│ (Postman / │
-│ Browser) │
-└──────┬──────┘
-│ HTTP
-▼
-┌─────────────┐
-│ API Gateway │
-└──────┬──────┘
-│
-▼
-┌─────────────┐
-│ Lambda │
-│ Handlers │
-└──────┬──────┘
-│
-┌────────┴────────┐
-▼ ▼
-┌─────────────┐ ┌─────────────┐
-│ DynamoDB │ │ S3 │
-│ Metadata │ │ Image File │
-└─────────────┘ └─────────────┘
+# Architecture Overview
+       ┌──────────────────┐
+       │      Client      │
+       │ (Postman/Browser)│
+       └────────┬─────────┘
+                │
+              HTTP
+                ▼
+       ┌──────────────────┐
+       │   API Gateway    │
+       └────────┬─────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │ Lambda Handlers  │
+       └────────┬─────────┘
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+    ┌─────────────┐   ┌─────────────┐
+    │  DynamoDB   │   │     S3      │
+    │  Metadata   │   │ Image File  │
+    └─────────────┘   └─────────────┘
 
-## System Components:
+# System Components:
 
-# Component Purpose
+- API Gateway HTTP entry point
+- Lambda Executes business logic
+- DynamoDB Stores image metadata
+- S3 Stores image files
+- LocalStack Simulates AWS services locally
 
-API Gateway HTTP entry point
-Lambda Executes business logic
-DynamoDB Stores image metadata
-S3 Stores image files
-LocalStack Simulates AWS services locally
+# DynamoDB Table Design
 
-## DynamoDB Table Design
+**Table: Images**
 
-# Table: Images
-
-# Attribute Description
-
-userId Partition Key
-imageId Sort Key
-createdAt Upload timestamp
-title Image title
-tags Image tags
-status Upload status
-s3Key S3 object key
-idempotencyKey Prevents duplicate uploads
+| Field | Key Type | Description |
+| :--- | :--- | :--- |
+| `userId` | **Partition Key** | Unique identifier for the user |
+| `imageId` | **Sort Key** | Unique identifier for the image |
+| `createdAt` | — | Upload timestamp |
+| `title` | — | Image title |
+| `tags` | — | Image tags |
+| `status` | — | Upload status |
+| `s3Key` | — | S3 object key |
+| `idempotencyKey` | — | Prevents duplicate uploads |
 
 ## Global Secondary Index
-
+```
 Used for idempotent uploads.
 
 IndexName: IdempotencyKeyIndex
 PartitionKey: idempotencyKey
+```
 
-## API Endpoints:
+# API Design:
 
-# Upload Image
+### API Base URL
 
-POST /images
+`
+http://localhost:4566/restapis/{API_ID}/dev/_user_request_
+`
 
-Headers:
+### Upload Image
+
+`POST /images`
+
+**Headers**
+```
 userId
 title
 fileName
 Content-Type
+```
 
-Body:
+**Body**
+```
 Binary image file
+```
 
-Response:
-
+**Response[201 created]**
+```
 {
 "imageId": "01KKRS9QFVA0GNKEKY7FP3JXXS",
 "status": "READY"
 }
+```
 
-# List Images
+**Error codes**
+- 400: Bad request
+- 500 : Internal Server Error
 
-GET /images?userId={userId}
+### List Images
 
-Response:
+`GET /images?userId={userId}&limit=2&nextToken=...`
 
+**Response[200 OK]**
+```
 {
 "items": [...],
 "nextToken": null
 }
+```
+**Error codes**
+- 400: Bad request
+- 500 : Internal Server Error
 
-# Get Image
+### Get Image
 
-GET /images/{userId}/{imageId}
+`GET /images/{userId}/{imageId}`
 
-Response:
-
+**Response[200 OK]**
+```
 {
 "imageId": "...",
 "title": "...",
 "downloadURL": "presigned S3 URL"
 }
+```
 
-# Delete Image
+**Error codes**
+- 400: Bad request
+- 404: Image not found
+- 500 : Internal Server Error
 
-DELETE /images/{userId}/{imageId}
+### Delete Image
 
-Response:
+`DELETE /images/{userId}/{imageId}`
 
-204 No Content
+**Response**
 
-## Project Structure
+`204 No Content`
 
+**Error codes**
+- 400: Bad request
+- 404: Image not found
+- 500 : Internal Server Error
+
+# Project Structure
+```
 image-service/
 │
 ├── src/
@@ -142,7 +179,7 @@ image-service/
 │ └── utils/
 │ └── pagination.py
 │ └── image_service_factory.py
-│ └── id_generator.py
+│ 
 |
 ├── scripts/
 │ ├── package.ps1
@@ -154,9 +191,22 @@ image-service/
 ├── requirements.txt
 ├── docker-compose.yml
 └── README.md
+```
+# How to Run the Project Locally
 
-## Running the Project Locally
+### Prerequisites
+- Python 3.11+
+- Docker and Docker Compose (for LocalStack)
+  - Docker Desktop (includes `docker compose` v2) - Recommended
+  - OR standalone `docker-compose` v1
+- AWS CLI (for LocalStack setup and AWS deployment)
 
+### 1. Install dependencies
+` pip install requirements.txt`
+
+### 2. create env file
+
+### 3.  AWS setup
 Just run start.ps1
 
 1. it will run docker setup
@@ -167,81 +217,138 @@ Just run start.ps1
 3. setup localstack
    ./scripts/setup_localstack.ps1
 
-4. deploy lambda
+4. deploys lambda
+   ```
    awslocal lambda update-function-code \
    --function-name upload-image \
    --zip-file fileb://lambda.zip
+   ```
+5. Creates and deploys API gateway
 
-** Repeat for other Lambda functions **
+### 4. Run the APIs in Postman
 
-## API Base URL
+### 5. Running tests
+Run this command in terminal `pytest`
 
-http://localhost:4566/restapis/{API\*ID}/dev/\_user*request*
+if you want to view coverage run `pytest --cov=src`
 
-## Example Requests
+# Techstack Used:
 
-Upload Image
-curl -X POST \
-http://localhost:4566/restapis/{API\*ID}/dev/\_user*request*/images \
--H "userId: user123" \
--H "title: My Test Image" \
--H "fileName: test.jpg" \
--H "Content-Type: image/jpeg" \
---data-binary @test.jpg
+- Python 3.11
+- AWS Lambda
+- API Gateway
+- DynamoDB
+- S3
+- LocalStack
+- boto3
 
-# Status Lifecycle for upload image
+# Key design decisions and Trade offs
+### 1. S3 vs DynamoDB for image storage
+Current design: Store images in S3 and metadata in DynamoDB
+why?
+- DynamoDB has 400KB limit
+- S3 optimized for large binary storage
+- Keeps DB queries fast
 
-UPLOADING → READY → DELETED
+### 2. Lambda upload vs Presigned upload
+Current Design: Client -> Lambda -> S3
 
-If an upload fails:
+Why?
+- Simpler and Controlled
 
-UPLOADING → ERROR
+Cons:
+- Higher latency
 
-## Technologies Used:
+Alternative: Client -> Presigned Url -> S3
 
-Python 3.11
-AWS Lambda
-API Gateway
-DynamoDB
-S3
-LocalStack
-boto3
+Why?
+- Scalable and faster
 
-## TEST COVERAGE
+Cons:
+- A bit more complex than current
 
-## Name Stmts Miss Cover Missing
 
-src\_\_init**.py 0 0 100%
-src\config.py 8 0 100%
-src\handlers\_\_init**.py 0 0 100%
-src\handlers\delete_image.py 18 0 100%
-src\handlers\get_image.py 18 0 100%
-src\handlers\list_images.py 28 3 89% 73-75
-src\handlers\upload_image.py 37 3 92% 19, 46, 50
-src\models\image_model.py 10 0 100%
-src\repositories\_\_init**.py 0 0 100%
-src\repositories\dynamodb_repository.py 34 15 56% 31-39, 66, 108-119, 132
-src\repositories\s3_repository.py 14 1 93% 35
-src\services\_\_init**.py 0 0 100%
-src\services\image_service.py 75 20 73% 34, 36, 76, 148-160,170-182
-src\utils\_\_init\_\_.py 0 0 100%
-src\utils\id_generator.py 4 4 0% 1-6
-src\utils\image_service_factory.py 5 1 80% 6
-src\utils\pagination.py 6 1 83% 8
+### 3. API Design choice:
+Current: /images
 
----
+Why:
+- Easy to implement for assigment purpose
 
-TOTAL 257 48 81%
-========= 25 passed ===============
+Alternative: `/users/{userId}/images`
 
-## Future Improvements:
+Why?
+- hierarchical design is more scalable
 
-Generate image thumbnails
+### Idempotency
 
-Add authentication (JWT / Cognito)
+The system ensures safe retries using:
 
-Introduce SQS for async image processing
+- SHA256(userId + fileBytes) → idempotencyKey
+- DynamoDB GSI lookup
+- Conditional writes
 
-Add CDN (CloudFront) for image delivery
+**Why:**
+- Prevents duplicate uploads under retries and concurrent requests
 
-Add image validation and compression
+## Concurrency Handling
+
+- Idempotency keys prevent logical duplication
+- DynamoDB conditional writes prevent race conditions
+
+
+## Scalability considerations:
+
+### Lambda
+- scales per request[horizontal scaling]
+- No infra management
+
+
+### DynamoDB
+- Partitions based scaling
+- Handles high throughput automatically
+
+### API Gateway
+10,000 requests/second (soft limit, can be increased)
+
+### S3
+Almost unlimited storage
+
+## System Limitations:
+- Hot partition risk if a single user generates high traffic
+- Lambda concurrency limits (1000 by default)
+- Synchronous upload increases latency
+- Lambda cold starts can add latency[**can use provisioned concurrency to overcome**]
+
+
+# Future Improvements:
+
+- Generate image thumbnails
+- Add authentication (JWT / Cognito)
+- Introduce SQS for async image processing
+`
+Client → Lambda → SQS → Worker Lambda → S3
+`
+
+- Add CDN (CloudFront) for image delivery
+- Add image validation and compression
+
+
+# Troubleshooting
+
+### LocalStack Issues
+
+- **Port conflicts**: Ensure port 4566 is not in use
+- **Resource creation fails**: Check LocalStack logs: `docker logs localstack`
+- **Connection errors**: Verify LocalStack is running: `curl http://localhost:4566/_localstack/health`
+
+### Lambda Issues
+
+- **Timeout errors**: Increase Lambda timeout
+- **Memory errors**: Increase Lambda memory allocation
+- **Permission errors**: Check IAM role policies
+
+### API Gateway Issues
+
+- **403 errors**: Verify API key is correct
+- **CORS errors**: Check CORS configuration
+- **502 errors**: Check Lambda function logs in CloudWatch
