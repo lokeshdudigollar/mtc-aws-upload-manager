@@ -5,6 +5,7 @@ import ulid
 from src.utils.pagination import encode_token
 from botocore.exceptions import ClientError
 from src.models.image_model import Image
+import src.utils.constants as constants
 
 class ImageService:
     """
@@ -30,9 +31,9 @@ class ImageService:
             dict: The image ID and final status.
         """
         if not user_id:
-            raise ValueError("User ID is required")
+            raise ValueError(constants.ERR_MISSING_USER_ID)
         if not file_bytes:
-            raise ValueError("image file is required")
+            raise ValueError(constants.ERR_MISSING_IMAGE_FILE)
 
         # Generate ULID for high-performance sorting/uniqueness
         image_id = str(ulid.new())
@@ -40,8 +41,9 @@ class ImageService:
         # Generate idempotency key to prevent duplicate processing of the same file
         raw = file_bytes + user_id.encode() # prevents two users uploading the same image from colliding.
         idempotency_key = hashlib.sha256(raw).hexdigest()
+        # Check if an upload with the same idempotency key is already in progress or completed
         existing = self.db.get_by_idempotency_key(idempotency_key)
-        if existing and existing.get("status") == "READY":
+        if existing and existing.get("status") == constants.STATUS_READY:
             return {
                 "imageId": existing["imageId"],
                 "status": existing["status"]
@@ -55,14 +57,17 @@ class ImageService:
             createdAt=created_at,
             title=title,
             tags=tags,
-            status="UPLOADING",
+            status=constants.STATUS_UPLOADING,
             idempotencyKey=idempotency_key
         )
         try:
             self.db.save_metadata(image.to_dict())
         except ClientError as error:
-            existing = self.db.get_by_idempotency_key(idempotency_key)
-            return existing
+            if existing and existing.get("status") == constants.STATUS_READY:
+                return existing
+            # If it's in ERROR or UPLOADING, don't return! 
+            # Update the image_id to the existing one so we don't create orphans
+            image_id = existing["imageId"]
 
 
         try:
@@ -78,7 +83,7 @@ class ImageService:
                 image_id= image_id,
                 update_expression= "SET #s = :status, s3Key= :s3Key",
                 expression_attribute_values= {
-                    ":status": "READY",
+                    ":status": constants.STATUS_READY,
                     ":s3Key": s3Key
                 }
             )
@@ -90,7 +95,7 @@ class ImageService:
                 image_id= image_id,
                 update_expression= "SET #s = :status",
                 expression_attribute_values= {
-                    ":status": "ERROR"
+                    ":status": constants.STATUS_ERROR
                 }
             )
             raise
@@ -99,7 +104,7 @@ class ImageService:
             userId=user_id,
             imageId=image_id,
             createdAt=created_at,
-            status="READY",
+            status=constants.STATUS_READY,
             title=title,
             tags=tags,
             s3Key=s3Key
@@ -116,7 +121,7 @@ class ImageService:
         )
         # Users should only see:
         # status = READY
-        items = [item for item in dbQueryResult["items"] if item.get("status") == "READY"]
+        items = [item for item in dbQueryResult["items"] if item.get("status") == constants.STATUS_READY]
         next_token = None    
         last_evaluated_key = dbQueryResult.get("lastEvaluatedKey")
         if last_evaluated_key:
@@ -134,13 +139,13 @@ class ImageService:
         item = self.db.get_image_metadata(user_id, image_id)
 
         if not item:
-            raise ValueError("image not found")
-        if item.get("status") != "READY":
-            raise ValueError("Image not available")
+            raise ValueError(constants.ERR_IMAGE_NOT_FOUND)
+        if item.get("status") != constants.STATUS_READY:
+            raise ValueError(constants.ERR_IMAGE_NOT_AVAILABLE)
         
         s3Key = item.get("s3Key")
         if not s3Key:
-            raise ValueError("Image storage path missing")
+            raise ValueError(constants.ERR_S3_STORAGE_KEY_ERROR)
         
         presigned_download_url = self.s3.generate_presigned_url(s3Key)
         return {

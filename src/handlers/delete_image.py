@@ -1,6 +1,7 @@
 import json
 
 from src.utils.image_service_factory import get_image_service
+import src.utils.constants as constants
 
 """
 Example request: DELETE /images/user123/01HV9YJ6ZK9W4H7X2A
@@ -25,8 +26,8 @@ def handler(event, context):
         # Validate path parameters
         if not user_id or not image_id:
             return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "userId and imageId are required"})
+                "statusCode": constants.HTTP_BAD_REQUEST,
+                "body": json.dumps({"error": constants.ERR_MISSING_USER_IMAGE_ID})
             }
         # Delete image
         res = image_service.delete_image(
@@ -34,16 +35,16 @@ def handler(event, context):
             image_id= image_id
         )
         return {
-            "statusCode": 204
+            "statusCode": constants.HTTP_NO_CONTENT
         }
 
     except ValueError as error:
         return {
-            "statusCode": 404,
+            "statusCode": constants.HTTP_NOT_FOUND,
             "body": json.dumps({"error": str(error)})
         }
     except Exception:
         return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"})
+            "statusCode": constants.HTTP_INTERNAL_ERROR,
+            "body": json.dumps({"error": constants.ERR_INTERNAL_SERVER})
         }

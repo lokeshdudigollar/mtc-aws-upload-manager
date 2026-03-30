@@ -2,6 +2,7 @@ import base64
 import json
 
 from src.utils.image_service_factory import get_image_service
+import src.utils.constants as constants
 
 def handler(event, context):
     """
@@ -16,7 +17,7 @@ def handler(event, context):
         body = event.get('body', '')
 
         if not body:
-            raise ValueError("Request body is empty")
+            raise ValueError(constants.ERR_MISSING_BODY)
         
         if is_base64:
             file_bytes = base64.b64decode(body)
@@ -33,16 +34,15 @@ def handler(event, context):
         content_type = headers.get("content-type")
 
         if not user_id:
-            raise ValueError("userId header is required")
+            raise ValueError(constants.ERR_MISSING_USER_ID)
         
-        allowed_types = ["image/jpeg", "image/png"]
-        if content_type not in allowed_types:
-            raise ValueError("Unsupported file type")
+
+        if content_type not in constants.ALLOWED_CONTENT_TYPES:
+            raise ValueError(constants.ERR_UNSUPPORTED_FILE)
 
         
-        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB > to avoid memory overflow
-        if len(file_bytes) > MAX_IMAGE_SIZE:
-            raise ValueError("File size exceeds the limit of 5MB")
+        if len(file_bytes) > constants.MAX_IMAGE_SIZE_BYTES:
+            raise ValueError(constants.ERR_FILE_TOO_LARGE)
         
         # if tags arrive as a string, split it into a list:
         if isinstance(tags, str):
@@ -58,18 +58,18 @@ def handler(event, context):
         )
 
         return {
-            "statusCode": 201,
+            "statusCode": constants.HTTP_CREATED,
             "body": json.dumps(uploadResult)
         }
         
     except ValueError as e:
         return {
-            "statusCode": 400,
-            "body": json.dumps({"Bad request error": str(e)})
+            "statusCode": constants.HTTP_BAD_REQUEST,
+            "body": json.dumps({constants.ERR_BAD_REQUEST: str(e)})
         }
 
     except Exception as e:
         return {
-            "statusCode": 500,
-            "body": json.dumps({"Internal Server Error": str(e)})
+            "statusCode": constants.HTTP_INTERNAL_ERROR,
+            "body": json.dumps({constants.ERR_INTERNAL_SERVER: str(e)})
         }

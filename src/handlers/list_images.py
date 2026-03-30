@@ -2,6 +2,7 @@ import json
 
 from src.utils.image_service_factory import get_image_service
 from src.utils.pagination import decode_token
+import src.utils.constants as constants
 
 """
 Example request: GET /images?userId=user123&limit=10&lastKey=XYZ
@@ -45,16 +46,16 @@ def handler(event, context):
         
         if not userId:
             return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "userId is required"})
+                "statusCode": constants.HTTP_BAD_REQUEST,
+                "body": json.dumps({"error": constants.ERR_MISSING_USER_ID})
             }
         # try converting limit to int
         try:
             limit = int(limit)
         except ValueError:
             return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "limit must be a number"})
+                "statusCode": constants.HTTP_BAD_REQUEST,
+                "body": json.dumps({"error": constants.ERR_INVALID_LIMIT})
             }
         res = image_service.list_images(
             user_id= userId,
@@ -63,13 +64,12 @@ def handler(event, context):
         )
         
         return {
-            "statusCode": 200,
+            "statusCode": constants.HTTP_OK,
             "body": json.dumps(res, default=str) # 'default=str' handles datetime objects
         }
 
     except Exception as e:
-        print("Exception: ", e)
         return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"})
+            "statusCode": constants.HTTP_INTERNAL_ERROR,
+            "body": json.dumps({"error": constants.ERR_INTERNAL_SERVER, "details": str(e)})
         }
