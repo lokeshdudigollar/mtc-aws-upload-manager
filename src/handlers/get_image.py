@@ -2,7 +2,7 @@ import json
 
 from src.utils.image_service_factory import get_image_service
 import src.utils.constants as constants
-from src.utils.validators import validate_image_request
+from src.utils.validators import validate_image_expiry, validate_image_request
 
 """
 Example request: GET /images/user123/01HV9YJ6ZK9W4H7X2A
@@ -27,9 +27,15 @@ def handler(event, context):
     image_service = get_image_service()
     try:
         path_params = event.get("pathParameters") or {}
+        query_params = event.get("queryStringParameters") or {}
 
         user_id = path_params.get("userId")
         image_id = path_params.get("imageId")
+
+        expiration = validate_image_expiry(
+            query_params.get("expiration"),
+            constants.DEFAULT_EXPIRATION
+        )
 
         try:
             # Validate path parameters
@@ -43,7 +49,8 @@ def handler(event, context):
         # Fetch image metadata and presigned URL
         res = image_service.get_image(
             user_id= user_id,
-            image_id= image_id
+            image_id= image_id,
+            expiration= expiration
         )
         
         return {

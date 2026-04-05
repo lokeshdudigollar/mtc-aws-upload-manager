@@ -134,7 +134,7 @@ class ImageService:
             "nextToken": next_token
         }
     
-    def get_image(self,user_id, image_id):
+    def get_image(self,user_id, image_id, expiration= constants.DEFAULT_EXPIRATION):
         """
         Fetches image metadata and generates a temporary download link.
         """
@@ -149,7 +149,7 @@ class ImageService:
         if not s3Key:
             raise ValueError(constants.ERR_S3_STORAGE_KEY_ERROR)
         
-        presigned_download_url = self.s3.generate_presigned_url(s3Key)
+        presigned_download_url = self.s3.generate_presigned_url(s3Key, expiration)
         return {
             "imageId": image_id,
             "title": item.get("title"),

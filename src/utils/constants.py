@@ -29,3 +29,7 @@ ERR_S3_KEY_MISSING = "Image storage path missing"
 ERR_INTERNAL_SERVER = "Internal server error"
 ERR_BAD_REQUEST = "Bad request error"
 ERR_S3_STORAGE_KEY_ERROR = "Image storage path missing"
+
+DEFAULT_EXPIRATION = 3600 # 1 hour
+MIN_EXPIRATION = 60 # 1 minute
+MAX_EXPIRATION = 86400 # 24 hours

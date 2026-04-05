@@ -24,3 +24,29 @@ def validate_pagination_limit(limit):
         return int(limit)
     except ValueError:
         raise ValueError(const.ERR_INVALID_LIMIT)
+    
+def validate_image_expiry(expiration, default):
+    """
+    Validates and normalizes expiration time for presigned URL.
+
+    Args:
+        expiration (str | int | None): Expiration value from request
+        default (int): Default expiration value
+
+    Returns:
+        int: Validated expiration value
+    """
+    if expiration is None:
+        return default
+
+    try:
+        exp = int(expiration)
+    except (ValueError, TypeError):
+        raise ValueError("expiration must be a valid integer")
+
+    if exp < const.MIN_EXPIRATION or exp > const.MAX_EXPIRATION:
+        raise ValueError(
+            f"expiration must be between {const.MIN_EXPIRATION} and {const.MAX_EXPIRATION} seconds"
+        )
+
+    return exp

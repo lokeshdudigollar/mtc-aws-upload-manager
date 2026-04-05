@@ -38,7 +38,7 @@ class S3Repository:
             Key=s3_key
         )
 
-    def generate_presigned_url(self, s3_key, expiration=3600):
+    def generate_presigned_url(self, s3_key, expiration):
         """
         Generates a secure, time-limited URL for downloading image.
 
