@@ -21,6 +21,6 @@ def encode_token(key):
     """Encodes a DynamoDB LastEvaluatedKey dictionary into a base64 token string."""
     return base64.b64encode(json.dumps(key).encode()).decode()
 
-def decode__token(token):
+def decode_token(token):
     """Decodes a base64 token string back into a DynamoDB ExclusiveStartKey dictionary."""
     return json.loads(base64.b64decode(token).decode())
