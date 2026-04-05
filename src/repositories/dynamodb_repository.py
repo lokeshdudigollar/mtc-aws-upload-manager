@@ -1,7 +1,7 @@
 from src.config import dynamodb, DYNAMO_TABLE
 from boto3.dynamodb.conditions import Key
 table = dynamodb.Table(DYNAMO_TABLE)
-
+from botocore.exceptions import ClientError
 
 """
 Expample of item uploaded to dynamoDB
