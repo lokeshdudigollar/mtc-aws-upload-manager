@@ -15,3 +15,11 @@ localstack-data/
 node_modules/
 
 *.log
+
+package-lock.json
+yarn.lock
+dist/
+coverage/
+*.egg-info/
+*.egg
+package/

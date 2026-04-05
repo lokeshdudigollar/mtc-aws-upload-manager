@@ -1,7 +1,3 @@
-boto3
-pytest
-moto
 ulid-py
 python-multipart
-fastapi
-uvicorn
+localstack-client
