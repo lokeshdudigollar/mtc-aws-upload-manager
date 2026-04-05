@@ -3,12 +3,12 @@
 
 ### API Endpoints Summary
 
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| POST | `/images` | Upload image | Yes |
-| GET | `/images` | List images | Yes |
-| GET | `/images/{image_id}` | View image | Yes |
-| DELETE | `/images/{image_id}` | Delete image | Yes |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/images` | Upload image |
+| GET | `/images` | List images |
+| GET | `/images/{image_id}` | View image |
+| DELETE | `/images/{image_id}` | Delete image |
 
 
 
@@ -31,18 +31,7 @@
 | 404 | Not Found (resource doesn't exist) |
 | 500 | Internal Server Error |
 
-### Example Requests
-
-```
-curl -X POST \
-http://localhost:4566/restapis/{API\*ID}/dev/\_user*request*/images \
--H "userId: user123" \
--H "title: My Test Image" \
--H "fileName: test.jpg" \
--H "Content-Type: image/jpeg" \
---data-binary @test.jpg
-```
-
+# APIs
 
 ## Upload Image
 Uploads a binary image file and creates a metadata record in the system.
@@ -93,7 +82,6 @@ Retrieves a paginated list of all images belonging to a specific user.
 **Example request**
 ```
 curl --location 'http://localhost:4566/restapis/yojqtb9pqw/dev/_user_request_/images?userId=user003'
-
 ```
 **Success Response:**
 - Code: `200 OK`
@@ -127,7 +115,6 @@ Retrieves metadata for a specific image, including a temporary presigned URL for
 **example request**
 ```
 curl --location 'http://localhost:4566/restapis/yojqtb9pqw/dev/_user_request_/images/user003/01KNFG6GM4BSZ0GMZ3PRX1SHB8'
-
 ```
 
 **Success Response:**
