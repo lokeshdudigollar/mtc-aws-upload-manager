@@ -40,7 +40,7 @@ def test_list_images_missing_userid(mock_service):
     response = handler(event, None)
     
     assert response["statusCode"] == 400
-    assert "userId is required" in response["body"]
+    assert "userId header is required" in response["body"]
     mock_service.list_images.assert_not_called()
 
 def test_list_images_invalid_limit(mock_service):

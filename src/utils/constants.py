@@ -17,7 +17,7 @@ HTTP_INTERNAL_ERROR = 500
 
 # Error Messages
 ERR_MISSING_BODY = "Request body is empty"
-ERR_MISSING_USER_ID = "userId is required"
+ERR_MISSING_USER_ID = "userId header is required"
 ERR_MISSING_USER_IMAGE_ID = "userId and imageId are required"
 ERR_UNSUPPORTED_FILE = "Unsupported file type"
 ERR_FILE_TOO_LARGE = "File size exceeds the limit of 5MB"

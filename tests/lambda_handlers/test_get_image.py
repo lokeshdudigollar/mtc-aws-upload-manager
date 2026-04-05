@@ -33,7 +33,7 @@ def test_get_image_success(mock_service):
     # Assert
     assert response["statusCode"] == 200
     assert json.loads(response["body"]) == expected_result
-    mock_service.get_image.assert_called_with(user_id="user123", image_id="img123")
+    mock_service.get_image.assert_called_with(user_id="user123", image_id="img123", expiration=3600)
 
 def test_get_image_missing_params(mock_service):
     # Event missing pathParameters

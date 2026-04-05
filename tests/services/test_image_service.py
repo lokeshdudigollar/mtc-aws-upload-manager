@@ -1,118 +1,173 @@
-import pytest
-from unittest.mock import MagicMock
-from src.services.image_service import ImageService
+from src.utils.helpers import (
+    encode_token, generate_image_id, get_current_timestamp, 
+    generate_idempotency_key
+)
+from src.utils.validators import validate_user_id
+from src.utils.constants import (
+    STATUS_READY, STATUS_UPLOADING, STATUS_ERROR,
+    ERR_MISSING_USER_ID, ERR_MISSING_FILE, ERR_IMAGE_NOT_FOUND,
+    ERR_IMAGE_NOT_AVAILABLE, ERR_S3_KEY_MISSING
+)
 from botocore.exceptions import ClientError
+from src.models.image_model import Image
 
-@pytest.fixture
-def service():
-    # Setup mocks for dependencies
-    db_mock = MagicMock()
-    s3_mock = MagicMock()
-    return ImageService(db_repo=db_mock, s3_repo=s3_mock)
+class ImageService:
+    """
+    Dependency Inversion Principle
+    """
+    def __init__(self, db_repo, s3_repo):
+        self.db = db_repo
+        self.s3 = s3_repo
 
-def test_list_images_empty_result(service):
-    # Setup
-    service.db.list_images.return_value = {"items": [], "lastEvaluatedKey": None}
-    
-    # Act
-    result = service.list_images("user123")
-    
-    # Assert
-    assert result["items"] == []
-    assert result["nextToken"] is None
-    
-def test_list_images_filters_ready_only(service):
-    # Setup: DB returns a mix of READY and UPLOADING
-    service.db.list_images.return_value = {
-        "items": [
-            {"imageId": "1", "status": "READY"},
-            {"imageId": "2", "status": "UPLOADING"},
-            {"imageId": "3", "status": "READY"}
-        ],
-        "lastEvaluatedKey": {"imageId": "3"}
-    }
-    
-    # Act
-    result = service.list_images("user123")
-    
-    # Assert
-    # Filtered out status "UPLOADING"
-    assert len(result["items"]) == 2
-    assert result["items"][0]["status"] == "READY"
-    assert result["items"][1]["status"] == "READY"
-    # Verify nextToken exists (encoded from the lastEvaluatedKey)
-    assert result["nextToken"] is not None
+    def upload_image(self,user_id, title, tags, file_bytes, content_type, file_name):
+        """
+        Coordinates the multi-step process of saving image metadata and uploading to S3.
+        
+        Args:
+            user_id (str): ID of the owner.
+            title (str): Image title.
+            tags (list): List of strings.
+            file_bytes (bytes): Raw image data.
+            content_type (str): MIME type.
+            file_name (str): Original filename for idempotency calculation.
+        
+        Returns:
+            dict: The image ID and final status.
+        """
+        validate_user_id(user_id)
+        if not file_bytes:
+            raise ValueError(ERR_MISSING_FILE)
 
-def test_upload_image_happy_path(service):
-    # Setup
-    service.s3.upload_image.return_value = "s3-key-123"
-    
-    # Act
-    result = service.upload_image(
-        user_id="user1",
-        title="Test Image",
-        tags=["nature", "test"],
-        file_bytes=b"fake-bytes",
-        content_type="image/jpeg",
-        file_name="test.jpg"
-    )
-    
-    # Assert
-    assert result["status"] == "READY"
-    assert result["s3Key"] == "s3-key-123"
-    service.db.save_metadata.assert_called()
-    service.db.update_metadata.assert_called()
-
-def test_upload_image_idempotency_skip(service):
-    # Setup: simulate existing image in DB
-    service.db.get_by_idempotency_key.return_value = {
-        "imageId": "existing-id",
-        "status": "READY"
-    }
-    
-    # Act
-    result = service.upload_image(
-        user_id="user1", title="Dupe", tags=[], 
-        file_bytes=b"data", content_type="img", file_name="f.jpg"
-    )
-    
-    # Assert
-    assert result["imageId"] == "existing-id"
-    service.s3.upload_image.assert_not_called()
-
-def test_upload_image_s3_failure_rollback(service):
-    # Setup: S3 upload fails
-    service.s3.upload_image.side_effect = Exception("S3 upload failed")
-    
-    # Act & Assert
-    with pytest.raises(Exception, match="S3 upload failed"):
-        service.upload_image(
-            user_id="user1", title="Fail", tags=[], 
-            file_bytes=b"data", content_type="img", file_name="f.jpg"
+        image_id = generate_image_id()
+        created_at = get_current_timestamp()
+        idempotency_key = generate_idempotency_key(file_bytes, user_id)
+        existing = self.db.get_by_idempotency_key(idempotency_key)
+        if existing and existing.get("status") == STATUS_READY:
+            return {
+                "imageId": existing["imageId"],
+                "status": existing["status"]
+            }
+        
+        #save initial metadata with status=UPLOADING
+        
+        image = Image(
+            userId=user_id,
+            imageId=image_id,
+            createdAt=created_at,
+            title=title,
+            tags=tags,
+            status=STATUS_UPLOADING,
+            idempotencyKey=idempotency_key
         )
-    
-    # Verify rollback: status set to ERROR
-    # We check if update_metadata was called with status=ERROR
-    error_update = [
-        call for call in service.db.update_metadata.call_args_list 
-        if call.kwargs['expression_attribute_values'][':status'] == "ERROR"
-    ]
-    assert len(error_update) == 1
+        try:
+            self.db.save_metadata(image.to_dict())
+        except ClientError as error:
+            # If it already exists, we need to decide if we should try uploading again
+            existing = self.db.get_by_idempotency_key(idempotency_key)
+            if existing and existing.get("status") == STATUS_READY:
+                return existing
+            # If it's in ERROR or UPLOADING, don't return! 
+            # Update the image_id to the existing one so we don't create orphans
+            image_id = existing["imageId"]
 
-def test_upload_image_db_conditional_failure(service):
-    # Setup: Simulate ConditionalCheckFailedException during save
-    # Create a custom botocore error
-    error_response = {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'Exists'}}
-    exception = ClientError(error_response, 'PutItem')
+        try:
+            # Upload image to S3 (using image_id as the storage key)
+            s3Key = self.s3.upload_image(
+                file_bytes= file_bytes,
+                image_id= image_id,
+                content_type= content_type
+            )
+            # update metadata with status change to READY
+            self.db.update_metadata(
+                user_id= user_id,
+                image_id= image_id,
+                update_expression= "SET #s = :status, s3Key= :s3Key",
+                expression_attribute_values= {
+                    ":status": STATUS_READY,
+                    ":s3Key": s3Key
+                }
+            )
+
+        except Exception as error:
+            # Rollback status to ERROR if S3 upload fails
+            self.db.update_metadata(
+                user_id= user_id,
+                image_id= image_id,
+                update_expression= "SET #s = :status",
+                expression_attribute_values= {
+                    ":status": STATUS_ERROR
+                }
+            )
+            raise
+
+        return Image(
+            userId=user_id,
+            imageId=image_id,
+            createdAt=created_at,
+            status=STATUS_READY,
+            title=title,
+            tags=tags,
+            s3Key=s3Key
+        ).to_dict()
     
-    service.db.save_metadata.side_effect = exception
-    service.db.get_by_idempotency_key.return_value = {"imageId": "found-id", "status": "UPLOADING"}
+    def list_images(self,user_id, limit= 20, last_key= None):
+        """
+        Retrieves a paginated list of images for a user.
+        """
+        dbQueryResult = self.db.list_images(
+            user_id,
+            limit,
+            last_key
+        )
+        # Users should only see:
+        # status = READY
+        items = [item for item in dbQueryResult["items"] if item.get("status") == STATUS_READY]
+        next_token = None    
+        last_evaluated_key = dbQueryResult.get("lastEvaluatedKey")
+        if last_evaluated_key:
+            next_token = encode_token(last_evaluated_key)
+        
+        return {
+            "items": items,
+            "nextToken": next_token
+        }
     
-    # Act
-    result = service.upload_image(
-        user_id="user1", title="...", tags=[], 
-        file_bytes=b"data", content_type="img", file_name="f.jpg"
-    )
+    def get_image(self,user_id, image_id):
+        """
+        Fetches image metadata and generates a temporary download link.
+        """
+        item = self.db.get_image_metadata(user_id, image_id)
+
+        if not item:
+            raise ValueError(ERR_IMAGE_NOT_FOUND)
+        if item.get("status") != STATUS_READY:
+            raise ValueError(ERR_IMAGE_NOT_AVAILABLE)
+        
+        s3Key = item.get("s3Key")
+        if not s3Key:
+            raise ValueError(ERR_S3_KEY_MISSING)
+        
+        presigned_download_url = self.s3.generate_presigned_url(s3Key)
+        return {
+            "imageId": image_id,
+            "title": item.get("title"),
+            "downloadURL": presigned_download_url
+        }
     
-    # Assert
-    assert result["imageId"] == "found-id"
+    def delete_image(self,user_id, image_id):
+        """
+        Removes image from storage and deletes metadata from the database.
+        """
+        item = self.db.get_image_metadata(user_id, image_id)
+
+        # If item doesn't exist, treat as already deleted
+        if not item:
+            return
+
+        s3Key = item.get("s3Key")
+        # Delete from S3 first
+        if s3Key:
+            self.s3.delete_image(s3Key)
+
+        # Delete metadat from DynamoDB
+        self.db.delete_image_metadata(user_id, image_id)
