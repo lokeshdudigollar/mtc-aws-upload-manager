@@ -207,7 +207,7 @@ image-service/
 ### 2. create env file
 
 ### 3.  AWS setup
-Just run start.ps1
+Just run start.ps1(./scripts/start.ps1)
 
 1. it will run docker setup
 
@@ -352,3 +352,75 @@ Client → Lambda → SQS → Worker Lambda → S3
 - **403 errors**: Verify API key is correct
 - **CORS errors**: Check CORS configuration
 - **502 errors**: Check Lambda function logs in CloudWatch
+
+
+### Checking logs for localstack
+
+get all logs from localstack
+`docker logs -f localstack> `
+
+get logs for a specific lambda
+`docker logs localstack 2>&1 | Select-String "upload-image"`
+
+check localstack health
+`check health: http://localhost:4566/_localstack/health`
+
+get logs from log group
+`awslocal logs describe-log-streams /aws/lambda/list-images`
+
+## AWS commands
+### dynamoDB
+scan a dynamoDB table
+`awslocal dynamodb scan --table-name Images`
+
+list dynamodb tables
+`awslocal dynamodb list-tables`
+
+### Lambda create
+```
+awslocal lambda create-function `
+--function-name upload-image `
+--runtime python3.11 `
+--role arn:aws:iam::000000000000:role/lambda-role `
+--handler src.handlers.upload_image.handler `
+--zip-file fileb://lambda.zip
+
+```
+
+### lambda update
+update lambda code
+```
+awslocal lambda update-function-code `
+--function-name list-images `
+--zip-file fileb://lambda.zip
+```
+
+Update lambda configuration
+```
+awslocal lambda update-function-configuration `
+  --function-name list-images `
+  --timeout 300
+```
+
+### lambda invoke manually
+```
+awslocal lambda invoke `
+--function-name upload-image `
+--payload file://event.json `
+response.json
+```
+
+### awslocal
+Get all APIs
+`awslocal apigateway get-rest-apis`
+
+Get all lambdas created
+`awslocal lambda list-functions`
+
+Get s3 bucket names
+`awslocal s3 ls`
+
+Get all content of a bucket
+`awslocal s3 ls s3://image-bucket/ --recursive`
+
+
