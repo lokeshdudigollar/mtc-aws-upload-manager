@@ -1,6 +1,8 @@
 Write-Host "Starting Image Service Environment..."
 
 # Start LocalStack
+Write-Host " Bringing down current LocalStack..."
+docker-compose down
 Write-Host "Starting LocalStack..."
 docker-compose up -d
 

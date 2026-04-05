@@ -1,6 +1,11 @@
-Write-Host "Setting up LocalStack resources..."
+# -------------------------
+# Set Environment Variables for LocalStack
+# -------------------------
+$env:AWS_ACCESS_KEY_ID="test"
+$env:AWS_SECRET_ACCESS_KEY="test"
+$env:AWS_DEFAULT_REGION="us-east-1"
 
-$REGION="us-east-1"
+Write-Host "Setting up LocalStack resources in $env:AWS_DEFAULT_REGION..."
 
 # -------------------------
 # Create S3 Bucket
@@ -73,49 +78,43 @@ Write-Host "Creating Lambda functions..."
 
 $ROLE="arn:aws:iam::000000000000:role/lambda-role"
 
-awslocal lambda create-function `
---function-name upload-image `
---runtime python3.11 `
---role $ROLE `
---handler src.handlers.upload_image.handler `
---zip-file fileb://lambda.zip `
-2>$null
+# Array of functions with specific metadata
+$functions = @(
+    @{ name="upload-image"; handler="src.handlers.upload_image.handler"; timeout=3000 },
+    @{ name="list-images";  handler="src.handlers.list_images.handler";  timeout=3000 },
+    @{ name="get-image";   handler="src.handlers.get_image.handler";   timeout=3000 },
+    @{ name="delete-image"; handler="src.handlers.delete_image.handler"; timeout=3000 }
+)
 
-awslocal lambda create-function `
---function-name list-images `
---runtime python3.11 `
---role $ROLE `
---handler src.handlers.list_images.handler `
---zip-file fileb://lambda.zip `
-2>$null
+foreach ($func in $functions) {
+    Write-Host "Creating Lambda function: $($func.name)"
+    awslocal lambda create-function `
+    --function-name $func.name `
+    --runtime python3.11 `
+    --role $ROLE `
+    --handler $func.handler `
+    --zip-file fileb://lambda.zip `
+    --timeout $func.timeout `
+    2>$null
+}
 
-awslocal lambda create-function `
---function-name get-image `
---runtime python3.11 `
---role $ROLE `
---handler src.handlers.get_image.handler `
---zip-file fileb://lambda.zip `
-2>$null
-
-awslocal lambda create-function `
---function-name delete-image `
---runtime python3.11 `
---role $ROLE `
---handler src.handlers.delete_image.handler `
---zip-file fileb://lambda.zip `
-2>$null
-
+Write-Host "successfully created lambda functions..."
 # -------------------------
 # Create API Gateway
 # -------------------------
 Write-Host "Creating API Gateway..."
 
-$api = awslocal apigateway create-rest-api --name image-api | ConvertFrom-Json
+# 1. Create the API
+$api = awslocal apigateway create-rest-api --name montycloud-image-service | ConvertFrom-Json
 $API_ID = $api.id
 
+# 2. Get Root Resource ID
 $resources = awslocal apigateway get-resources --rest-api-id $API_ID | ConvertFrom-Json
 $ROOT_ID = $resources.items[0].id
 
+# 3. Create resources
+
+# Create /images resource to get IMAGE ID
 $images = awslocal apigateway create-resource `
 --rest-api-id $API_ID `
 --parent-id $ROOT_ID `
@@ -123,22 +122,161 @@ $images = awslocal apigateway create-resource `
 
 $IMAGES_ID = $images.id
 
-# POST /images → upload-image
+# -- create resources for dynamic user and image id --
+
+# create images/{userId}
+$userId = awslocal apigateway create-resource `
+--rest-api-id $API_ID `
+--parent-id $IMAGES_ID `
+--path-part "{userId}" | ConvertFrom-Json
+
+$USER_ID = $userId.id
+
+# create images/{userId}/{imageId}
+$imageId = awslocal apigateway create-resource `
+--rest-api-id $API_ID `
+--parent-id $USER_ID `
+--path-part "{imageId}" | ConvertFrom-Json
+
+$DYNAMIC_IMAGE_ID = $imageId.id
+
+# 4. Create Methods for the lambdas
+
+# POST /images
 awslocal apigateway put-method `
 --rest-api-id $API_ID `
 --resource-id $IMAGES_ID `
 --http-method POST `
+--authorization-type "NONE"
+
+# GET list-images
+awslocal apigateway put-method `
+--rest-api-id $API_ID `
+--resource-id $IMAGES_ID `
+--http-method GET `
 --authorization-type NONE
 
+# GET /images/{imageId}
+awslocal apigateway put-method `
+--rest-api-id $API_ID `
+--resource-id $DYNAMIC_IMAGE_ID `
+--http-method GET `
+--authorization-type "NONE"
+
+# DELETE /images/{imageId}/{userId}
+awslocal apigateway put-method `
+--rest-api-id $API_ID `
+--resource-id $DYNAMIC_IMAGE_ID `
+--http-method DELETE `
+--authorization-type NONE
+
+# 5. Build the urls
+
+# use $env:AWS_DEFAULT_REGION to match global config
+$CURRENT_REGION = $env:AWS_DEFAULT_REGION
+write-Host "Building url for api gateway deploy: $($CURRENT_REGION)"
+# Build the Lambda ARN and the Gateway-to-Lambda URI for all lambdas
+$UPLOAD_LAMBDA_ARN = "arn:aws:lambda:$($CURRENT_REGION):000000000000:function:upload-image"
+$LIST_LAMBDA_ARN = "arn:aws:lambda:$($CURRENT_REGION):000000000000:function:list-images"
+$GET_LAMBDA_ARN = "arn:aws:lambda:$($CURRENT_REGION):000000000000:function:get-image"
+$DELETE_LAMBDA_ARN = "arn:aws:lambda:$($CURRENT_REGION):000000000000:function:delete-image"
+
+$UPLOAD_INTEGRATION_URI = "arn:aws:apigateway:$($CURRENT_REGION):lambda:path/2015-03-31/functions/$($UPLOAD_LAMBDA_ARN)/invocations"
+$LIST_INTEGRATION_URI = "arn:aws:apigateway:$($CURRENT_REGION):lambda:path/2015-03-31/functions/$($LIST_LAMBDA_ARN)/invocations"
+$GET_INTEGRATION_URI = "arn:aws:apigateway:$($CURRENT_REGION):lambda:path/2015-03-31/functions/$($GET_LAMBDA_ARN)/invocations"
+$DELETE_INTEGRATION_URI = "arn:aws:apigateway:$($CURRENT_REGION):lambda:path/2015-03-31/functions/$($DELETE_LAMBDA_ARN)/invocations"
+
+
+# 6. adding permissions
+
+# Grant API Gateway permission to invoke the upload Lambda
+awslocal lambda add-permission `
+    --function-name upload-image `
+    --statement-id apigateway-access `
+    --action lambda:InvokeFunction `
+    --principal apigateway.amazonaws.com `
+    2>$null
+
+# Grant API Gateway permission to invoke the list Lambda
+awslocal lambda add-permission `
+    --function-name list-images `
+    --statement-id apigateway-access `
+    --action lambda:InvokeFunction `
+    --principal apigateway.amazonaws.com `
+    2>$null
+
+# Grant API Gateway permission to invoke the get Lambda
+awslocal lambda add-permission `
+    --function-name get-image `
+    --statement-id apigateway-access `
+    --action lambda:InvokeFunction `
+    --principal apigateway.amazonaws.com `
+    2>$null
+
+# Grant API Gateway permission to invoke the delete Lambda
+awslocal lambda add-permission `
+    --function-name delete-image `
+    --statement-id apigateway-access `
+    --action lambda:InvokeFunction `
+    --principal apigateway.amazonaws.com `
+    2>$null
+
+
+# 7. create api integrations for the lambdas
+
+Write-Host "Linking Lambdas to API Gateway..."
+
+#upload-image
 awslocal apigateway put-integration `
 --rest-api-id $API_ID `
 --resource-id $IMAGES_ID `
 --http-method POST `
 --type AWS_PROXY `
 --integration-http-method POST `
---uri arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:$REGION:000000000000:function:upload-image/invocations
+--uri $UPLOAD_INTEGRATION_URI
 
-# Deploy API
+# Give LocalStack a second to settle the integration
+Start-Sleep -Seconds 1
+
+# list-images
+awslocal apigateway put-integration `
+--rest-api-id $API_ID `
+--resource-id $IMAGES_ID `
+--http-method GET `
+--type AWS_PROXY `
+--integration-http-method POST `
+--uri $LIST_INTEGRATION_URI
+
+# Give LocalStack a second to settle the integration
+Start-Sleep -Seconds 2
+
+# get-image
+awslocal apigateway put-integration `
+--rest-api-id $API_ID `
+--resource-id $DYNAMIC_IMAGE_ID `
+--http-method GET `
+--type AWS_PROXY `
+--integration-http-method POST `
+--uri $GET_INTEGRATION_URI
+
+# Give LocalStack a second to settle the integration
+Start-Sleep -Seconds 2
+
+# delete-image
+awslocal apigateway put-integration `
+--rest-api-id $API_ID `
+--resource-id $DYNAMIC_IMAGE_ID `
+--http-method DELETE `
+--type AWS_PROXY `
+--integration-http-method POST `
+--uri $DELETE_INTEGRATION_URI
+
+# Give LocalStack a second to settle the integration
+Start-Sleep -Seconds 2
+
+
+# 8. Deploy API
+Write-Host "Deploying API to 'dev' stage for app: $API_ID"
 awslocal apigateway create-deployment `
 --rest-api-id $API_ID `
 --stage-name dev

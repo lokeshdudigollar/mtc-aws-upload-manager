@@ -1,25 +1,19 @@
 Write-Host "Starting Lambda packaging..."
 
-# Clean previous builds
-Write-Host "Cleaning old build..."
-Remove-Item build -Recurse -Force -ErrorAction Ignore
-Remove-Item lambda.zip -ErrorAction Ignore
+# 1. Clean previous builds
+Write-Host "Cleaning old build files..."
+if (Test-Path "package") { Remove-Item "package" -Recurse -Force }
+if (Test-Path "lambda.zip") { Remove-Item "lambda.zip" -Force }
 
-# Create build directory
-Write-Host "Creating build directory..."
-New-Item -ItemType Directory -Path build | Out-Null
+# 2. Install dependencies (Manual Step 1)
+Write-Host "Installing dependencies to ./package..."
+# Using ulid-py specifically as per your manual steps
+pip install -r requirements.txt -t package
 
-# Install dependencies
-Write-Host "Installing dependencies..."
-pip install -r requirements.txt -t build
-
-# Copy source code
-Write-Host "Copying source code..."
-Copy-Item src -Recurse build
-
-# Create zip package
-Write-Host "Creating lambda.zip..."
-Compress-Archive -Path build\* -DestinationPath lambda.zip -Force
+# 3. Create zip package (Manual Step 2)
+Write-Host "Creating lambda.zip from src and package..."
+# This command takes the CONTENTS of both folders and puts them at the root of the zip
+Compress-Archive -Path src,package\* -DestinationPath lambda.zip
 
 Write-Host "Lambda package created successfully!"
 Write-Host "Output: lambda.zip"
