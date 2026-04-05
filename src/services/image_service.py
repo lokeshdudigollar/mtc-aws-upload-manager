@@ -5,8 +5,8 @@ from src.utils.helpers import (
 from src.utils.validators import validate_user_id
 from src.utils.constants import (
     STATUS_READY, STATUS_UPLOADING, STATUS_ERROR,
-    ERR_MISSING_USER_ID, ERR_MISSING_FILE, ERR_IMAGE_NOT_FOUND,
-    ERR_IMAGE_NOT_AVAILABLE, ERR_S3_KEY_MISSING
+    ERR_MISSING_FILE, ERR_IMAGE_NOT_FOUND,
+    ERR_IMAGE_NOT_AVAILABLE, ERR_S3_KEY_MISSING,DEFAULT_EXPIRATION
 )
 from botocore.exceptions import ClientError
 from src.models.image_model import Image
@@ -136,7 +136,7 @@ class ImageService:
             "nextToken": next_token
         }
     
-    def get_image(self,user_id, image_id, expiration= constants.DEFAULT_EXPIRATION):
+    def get_image(self,user_id, image_id, expiration= DEFAULT_EXPIRATION):
         """
         Fetches image metadata and generates a temporary download link.
         """
