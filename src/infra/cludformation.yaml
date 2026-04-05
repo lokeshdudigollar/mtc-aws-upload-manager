@@ -9,6 +9,7 @@ Resources:
 
   ImagesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
     Properties:
       TableName: Images
       BillingMode: PAY_PER_REQUEST
